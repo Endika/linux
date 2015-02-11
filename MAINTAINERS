@@ -270,12 +270,12 @@ F:	drivers/acpi/
 F:	drivers/pnp/pnpacpi/
 F:	include/linux/acpi.h
 F:	include/acpi/
-F:	Documentation/acpi
+F:	Documentation/acpi/
 F:	Documentation/ABI/testing/sysfs-bus-acpi
 F:	drivers/pci/*acpi*
 F:	drivers/pci/*/*acpi*
 F:	drivers/pci/*/*/*acpi*
-F:	tools/power/acpi
+F:	tools/power/acpi/
 
 ACPI COMPONENT ARCHITECTURE (ACPICA)
 M:	Robert Moore <robert.moore@intel.com>
@@ -1586,6 +1586,7 @@ N:	xilinx
 F:	drivers/clocksource/cadence_ttc_timer.c
 F:	drivers/i2c/busses/i2c-cadence.c
 F:	drivers/mmc/host/sdhci-of-arasan.c
+F:	drivers/edac/synopsys_edac.c
 
 ARM SMMU DRIVER
 M:	Will Deacon <will.deacon@arm.com>
@@ -3513,6 +3514,8 @@ M:	Borislav Petkov <bp@alien8.de>
 M:	Mauro Carvalho Chehab <mchehab@osg.samsung.com>
 L:	linux-edac@vger.kernel.org
 W:	bluesmoke.sourceforge.net
+T:	git://git.kernel.org/pub/scm/linux/kernel/git/bp/bp.git#for-next
+T:	git://git.kernel.org/pub/linux/kernel/git/mchehab/linux-edac.git#linux_next
 S:	Supported
 F:	Documentation/edac.txt
 F:	drivers/edac/
@@ -7273,6 +7276,14 @@ F:	drivers/pci/
 F:	include/linux/pci*
 F:	arch/x86/pci/
 F:	arch/x86/kernel/quirks.c
+
+PCI DRIVER FOR ARM VERSATILE PLATFORM
+M:	Rob Herring <robh@kernel.org>
+L:	linux-pci@vger.kernel.org
+L:	linux-arm-kernel@lists.infradead.org
+S:	Maintained
+F:	Documentation/devicetree/bindings/pci/versatile.txt
+F:	drivers/pci/host/pci-versatile.c
 
 PCI DRIVER FOR APPLIEDMICRO XGENE
 M:	Tanmay Inamdar <tinamdar@apm.com>
