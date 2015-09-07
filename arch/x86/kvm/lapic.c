@@ -1172,7 +1172,7 @@ void wait_lapic_expire(struct kvm_vcpu *vcpu)
 
 	tsc_deadline = apic->lapic_timer.expired_tscdeadline;
 	apic->lapic_timer.expired_tscdeadline = 0;
-	guest_tsc = kvm_x86_ops->read_l1_tsc(vcpu, native_read_tsc());
+	guest_tsc = kvm_x86_ops->read_l1_tsc(vcpu, rdtsc());
 	trace_kvm_wait_lapic_expire(vcpu->vcpu_id, guest_tsc - tsc_deadline);
 
 	/* __delay is delay_tsc whenever the hardware has TSC, thus always.  */
@@ -1240,7 +1240,7 @@ static void start_apic_timer(struct kvm_lapic *apic)
 		local_irq_save(flags);
 
 		now = apic->lapic_timer.timer.base->get_time();
-		guest_tsc = kvm_x86_ops->read_l1_tsc(vcpu, native_read_tsc());
+		guest_tsc = kvm_x86_ops->read_l1_tsc(vcpu, rdtsc());
 		if (likely(tscdeadline > guest_tsc)) {
 			ns = (tscdeadline - guest_tsc) * 1000000ULL;
 			do_div(ns, this_tsc_khz);
@@ -1257,16 +1257,17 @@ static void start_apic_timer(struct kvm_lapic *apic)
 
 static void apic_manage_nmi_watchdog(struct kvm_lapic *apic, u32 lvt0_val)
 {
-	int nmi_wd_enabled = apic_lvt_nmi_mode(kvm_apic_get_reg(apic, APIC_LVT0));
+	bool lvt0_in_nmi_mode = apic_lvt_nmi_mode(lvt0_val);
 
-	if (apic_lvt_nmi_mode(lvt0_val)) {
-		if (!nmi_wd_enabled) {
+	if (apic->lvt0_in_nmi_mode != lvt0_in_nmi_mode) {
+		apic->lvt0_in_nmi_mode = lvt0_in_nmi_mode;
+		if (lvt0_in_nmi_mode) {
 			apic_debug("Receive NMI setting on APIC_LVT0 "
 				   "for cpu %d\n", apic->vcpu->vcpu_id);
-			apic->vcpu->kvm->arch.vapics_in_nmi_mode++;
-		}
-	} else if (nmi_wd_enabled)
-		apic->vcpu->kvm->arch.vapics_in_nmi_mode--;
+			atomic_inc(&apic->vcpu->kvm->arch.vapics_in_nmi_mode);
+		} else
+			atomic_dec(&apic->vcpu->kvm->arch.vapics_in_nmi_mode);
+	}
 }
 
 static int apic_reg_write(struct kvm_lapic *apic, u32 reg, u32 val)
@@ -1594,9 +1595,10 @@ void kvm_lapic_reset(struct kvm_vcpu *vcpu, bool init_event)
 	for (i = 0; i < APIC_LVT_NUM; i++)
 		apic_set_reg(apic, APIC_LVTT + 0x10 * i, APIC_LVT_MASKED);
 	apic_update_lvtt(apic);
-	if (!(vcpu->kvm->arch.disabled_quirks & KVM_QUIRK_LINT0_REENABLED))
+	if (kvm_check_has_quirk(vcpu->kvm, KVM_X86_QUIRK_LINT0_REENABLED))
 		apic_set_reg(apic, APIC_LVT0,
 			     SET_APIC_DELIVERY_MODE(0, APIC_MODE_EXTINT));
+	apic_manage_nmi_watchdog(apic, kvm_apic_get_reg(apic, APIC_LVT0));
 
 	apic_set_reg(apic, APIC_DFR, 0xffffffffU);
 	apic_set_spiv(apic, 0xff);
@@ -1822,6 +1824,7 @@ void kvm_apic_post_state_restore(struct kvm_vcpu *vcpu,
 	apic_update_ppr(apic);
 	hrtimer_cancel(&apic->lapic_timer.timer);
 	apic_update_lvtt(apic);
+	apic_manage_nmi_watchdog(apic, kvm_apic_get_reg(apic, APIC_LVT0));
 	update_divide_count(apic);
 	start_apic_timer(apic);
 	apic->irr_pending = true;
@@ -1897,8 +1900,9 @@ void kvm_lapic_sync_from_vapic(struct kvm_vcpu *vcpu)
 	if (!test_bit(KVM_APIC_CHECK_VAPIC, &vcpu->arch.apic_attention))
 		return;
 
-	kvm_read_guest_cached(vcpu->kvm, &vcpu->arch.apic->vapic_cache, &data,
-				sizeof(u32));
+	if (kvm_read_guest_cached(vcpu->kvm, &vcpu->arch.apic->vapic_cache, &data,
+				  sizeof(u32)))
+		return;
 
 	apic_set_tpr(vcpu->arch.apic, data & 0xff);
 }

@@ -1634,7 +1634,7 @@ void l2cap_unregister_user(struct l2cap_conn *conn, struct l2cap_user *user)
 	if (list_empty(&user->list))
 		goto out_unlock;
 
-	list_del(&user->list);
+	list_del_init(&user->list);
 	user->remove(conn, user);
 
 out_unlock:
@@ -1648,7 +1648,7 @@ static void l2cap_unregister_all_users(struct l2cap_conn *conn)
 
 	while (!list_empty(&conn->users)) {
 		user = list_first_entry(&conn->users, struct l2cap_user, list);
-		list_del(&user->list);
+		list_del_init(&user->list);
 		user->remove(conn, user);
 	}
 }
@@ -7113,8 +7113,10 @@ int l2cap_chan_connect(struct l2cap_chan *chan, __le16 psm, u16 cid,
 		else
 			role = HCI_ROLE_MASTER;
 
-		hcon = hci_connect_le(hdev, dst, dst_type, chan->sec_level,
-				      HCI_LE_CONN_TIMEOUT, role);
+		hcon = hci_connect_le_scan(hdev, dst, dst_type,
+					   chan->sec_level,
+					   HCI_LE_CONN_TIMEOUT,
+					   role);
 	} else {
 		u8 auth_type = l2cap_get_auth_type(chan);
 		hcon = hci_connect_acl(hdev, dst, chan->sec_level, auth_type);

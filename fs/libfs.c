@@ -20,11 +20,6 @@
 
 #include "internal.h"
 
-static inline int simple_positive(struct dentry *dentry)
-{
-	return d_really_is_positive(dentry) && !d_unhashed(dentry);
-}
-
 int simple_getattr(struct vfsmount *mnt, struct dentry *dentry,
 		   struct kstat *stat)
 {
@@ -1190,7 +1185,7 @@ void make_empty_dir_inode(struct inode *inode)
 	inode->i_uid = GLOBAL_ROOT_UID;
 	inode->i_gid = GLOBAL_ROOT_GID;
 	inode->i_rdev = 0;
-	inode->i_size = 2;
+	inode->i_size = 0;
 	inode->i_blkbits = PAGE_SHIFT;
 	inode->i_blocks = 0;
 
