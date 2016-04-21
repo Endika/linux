@@ -6252,8 +6252,8 @@ S:	Maintained
 F:	tools/testing/selftests
 
 KERNEL VIRTUAL MACHINE (KVM)
-M:	Gleb Natapov <gleb@kernel.org>
 M:	Paolo Bonzini <pbonzini@redhat.com>
+M:	Radim Krčmář <rkrcmar@redhat.com>
 L:	kvm@vger.kernel.org
 W:	http://www.linux-kvm.org
 T:	git git://git.kernel.org/pub/scm/virt/kvm/kvm.git
@@ -10594,6 +10594,14 @@ L:	ac100@lists.launchpad.net (moderated for non-subscribers)
 L:	linux-tegra@vger.kernel.org
 S:	Maintained
 F:	drivers/staging/nvec/
+
+STAGING - OLPC SECONDARY DISPLAY CONTROLLER (DCON)
+M:	Jens Frederich <jfrederich@gmail.com>
+M:	Daniel Drake <dsd@laptop.org>
+M:	Jon Nettleton <jon.nettleton@gmail.com>
+W:	http://wiki.laptop.org/go/DCON
+S:	Maintained
+F:	drivers/staging/olpc_dcon/
 
 STAGING - REALTEK RTL8712U DRIVERS
 M:	Larry Finger <Larry.Finger@lwfinger.net>
