@@ -41,8 +41,10 @@ void acpi_gpe_apply_masked_gpes(void);
 void acpi_container_init(void);
 void acpi_memory_hotplug_init(void);
 #ifdef	CONFIG_ACPI_HOTPLUG_IOAPIC
+void pci_ioapic_remove(struct acpi_pci_root *root);
 int acpi_ioapic_remove(struct acpi_pci_root *root);
 #else
+static inline void pci_ioapic_remove(struct acpi_pci_root *root) { return; }
 static inline int acpi_ioapic_remove(struct acpi_pci_root *root) { return 0; }
 #endif
 #ifdef CONFIG_ACPI_DOCK
@@ -62,8 +64,6 @@ void acpi_cmos_rtc_init(void);
 static inline void acpi_cmos_rtc_init(void) {}
 #endif
 int acpi_rev_override_setup(char *str);
-
-extern bool acpi_force_hot_remove;
 
 void acpi_sysfs_add_hotplug_profile(struct acpi_hotplug_profile *hotplug,
 				    const char *name);
@@ -111,7 +111,7 @@ int acpi_device_setup_files(struct acpi_device *dev);
 void acpi_device_remove_files(struct acpi_device *dev);
 void acpi_device_add_finalize(struct acpi_device *device);
 void acpi_free_pnp_ids(struct acpi_device_pnp *pnp);
-bool acpi_device_is_present(struct acpi_device *adev);
+bool acpi_device_is_present(const struct acpi_device *adev);
 bool acpi_device_is_battery(struct acpi_device *adev);
 bool acpi_device_is_first_physical_node(struct acpi_device *adev,
 					const struct device *dev);
@@ -172,8 +172,8 @@ struct acpi_ec {
 	struct work_struct work;
 	unsigned long timestamp;
 	unsigned long nr_pending_queries;
-	bool saved_busy_polling;
-	unsigned int saved_polling_guard;
+	bool busy_polling;
+	unsigned int polling_guard;
 };
 
 extern struct acpi_ec *first_ec;
@@ -198,8 +198,12 @@ void acpi_ec_remove_query_handler(struct acpi_ec *ec, u8 query_bit);
                                   Suspend/Resume
   -------------------------------------------------------------------------- */
 #ifdef CONFIG_ACPI_SYSTEM_POWER_STATES_SUPPORT
+extern bool acpi_s2idle_wakeup(void);
+extern bool acpi_sleep_no_ec_events(void);
 extern int acpi_sleep_init(void);
 #else
+static inline bool acpi_s2idle_wakeup(void) { return false; }
+static inline bool acpi_sleep_no_ec_events(void) { return true; }
 static inline int acpi_sleep_init(void) { return -ENXIO; }
 #endif
 

@@ -13,6 +13,8 @@
 
 #include <linux/nmi.h>
 #include <linux/module.h>
+#include <linux/sched/debug.h>
+
 #include <asm/irq_regs.h>
 #include <linux/perf_event.h>
 
@@ -20,41 +22,9 @@ static DEFINE_PER_CPU(bool, hard_watchdog_warn);
 static DEFINE_PER_CPU(bool, watchdog_nmi_touch);
 static DEFINE_PER_CPU(struct perf_event *, watchdog_ev);
 
-/* boot commands */
-/*
- * Should we panic when a soft-lockup or hard-lockup occurs:
- */
-unsigned int __read_mostly hardlockup_panic =
-			CONFIG_BOOTPARAM_HARDLOCKUP_PANIC_VALUE;
 static unsigned long hardlockup_allcpu_dumped;
-/*
- * We may not want to enable hard lockup detection by default in all cases,
- * for example when running the kernel as a guest on a hypervisor. In these
- * cases this function can be called to disable hard lockup detection. This
- * function should only be executed once by the boot processor before the
- * kernel command line parameters are parsed, because otherwise it is not
- * possible to override this in hardlockup_panic_setup().
- */
-void hardlockup_detector_disable(void)
-{
-	watchdog_enabled &= ~NMI_WATCHDOG_ENABLED;
-}
 
-static int __init hardlockup_panic_setup(char *str)
-{
-	if (!strncmp(str, "panic", 5))
-		hardlockup_panic = 1;
-	else if (!strncmp(str, "nopanic", 7))
-		hardlockup_panic = 0;
-	else if (!strncmp(str, "0", 1))
-		watchdog_enabled &= ~NMI_WATCHDOG_ENABLED;
-	else if (!strncmp(str, "1", 1))
-		watchdog_enabled |= NMI_WATCHDOG_ENABLED;
-	return 1;
-}
-__setup("nmi_watchdog=", hardlockup_panic_setup);
-
-void touch_nmi_watchdog(void)
+void arch_touch_nmi_watchdog(void)
 {
 	/*
 	 * Using __raw here because some code paths have
@@ -64,9 +34,8 @@ void touch_nmi_watchdog(void)
 	 * going off.
 	 */
 	raw_cpu_write(watchdog_nmi_touch, true);
-	touch_softlockup_watchdog();
 }
-EXPORT_SYMBOL(touch_nmi_watchdog);
+EXPORT_SYMBOL(arch_touch_nmi_watchdog);
 
 static struct perf_event_attr wd_hw_attr = {
 	.type		= PERF_TYPE_HARDWARE,
@@ -137,12 +106,14 @@ static void watchdog_overflow_callback(struct perf_event *event,
  * Reduce the watchdog noise by only printing messages
  * that are different from what cpu0 displayed.
  */
-static unsigned long cpu0_err;
+static unsigned long firstcpu_err;
+static atomic_t watchdog_cpus;
 
 int watchdog_nmi_enable(unsigned int cpu)
 {
 	struct perf_event_attr *wd_attr;
 	struct perf_event *event = per_cpu(watchdog_ev, cpu);
+	int firstcpu = 0;
 
 	/* nothing to do if the hard lockup detector is disabled */
 	if (!(watchdog_enabled & NMI_WATCHDOG_ENABLED))
@@ -156,19 +127,22 @@ int watchdog_nmi_enable(unsigned int cpu)
 	if (event != NULL)
 		goto out_enable;
 
+	if (atomic_inc_return(&watchdog_cpus) == 1)
+		firstcpu = 1;
+
 	wd_attr = &wd_hw_attr;
 	wd_attr->sample_period = hw_nmi_get_sample_period(watchdog_thresh);
 
 	/* Try to register using hardware perf events */
 	event = perf_event_create_kernel_counter(wd_attr, cpu, NULL, watchdog_overflow_callback, NULL);
 
-	/* save cpu0 error for future comparision */
-	if (cpu == 0 && IS_ERR(event))
-		cpu0_err = PTR_ERR(event);
+	/* save the first cpu's error for future comparision */
+	if (firstcpu && IS_ERR(event))
+		firstcpu_err = PTR_ERR(event);
 
 	if (!IS_ERR(event)) {
-		/* only print for cpu0 or different than cpu0 */
-		if (cpu == 0 || cpu0_err)
+		/* only print for the first cpu initialized */
+		if (firstcpu || firstcpu_err)
 			pr_info("enabled on all CPUs, permanently consumes one hw-PMU counter.\n");
 		goto out_save;
 	}
@@ -186,7 +160,7 @@ int watchdog_nmi_enable(unsigned int cpu)
 	smp_mb__after_atomic();
 
 	/* skip displaying the same error again */
-	if (cpu > 0 && (PTR_ERR(event) == cpu0_err))
+	if (!firstcpu && (PTR_ERR(event) == firstcpu_err))
 		return PTR_ERR(event);
 
 	/* vary the KERN level based on the returned errno */
@@ -222,9 +196,9 @@ void watchdog_nmi_disable(unsigned int cpu)
 
 		/* should be in cleanup, but blocks oprofile */
 		perf_event_release_kernel(event);
-	}
-	if (cpu == 0) {
+
 		/* watchdog_nmi_enable() expects this to be zero initially. */
-		cpu0_err = 0;
+		if (atomic_dec_and_test(&watchdog_cpus))
+			firstcpu_err = 0;
 	}
 }

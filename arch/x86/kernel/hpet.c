@@ -285,7 +285,7 @@ static void hpet_legacy_clockevent_register(void)
 	 * Start hpet with the boot cpu mask and make it
 	 * global after the IO_APIC has been initialized.
 	 */
-	hpet_clockevent.cpumask = cpumask_of(smp_processor_id());
+	hpet_clockevent.cpumask = cpumask_of(boot_cpu_data.cpu_index);
 	clockevents_config_and_register(&hpet_clockevent, hpet_freq,
 					HPET_MIN_PROG_DELTA, 0x7FFFFFFF);
 	global_clock_event = &hpet_clockevent;
@@ -354,7 +354,7 @@ static int hpet_resume(struct clock_event_device *evt, int timer)
 
 		irq_domain_deactivate_irq(irq_get_irq_data(hdev->irq));
 		irq_domain_activate_irq(irq_get_irq_data(hdev->irq));
-		disable_irq(hdev->irq);
+		disable_hardirq(hdev->irq);
 		irq_set_affinity(hdev->irq, cpumask_of(hdev->cpu));
 		enable_irq(hdev->irq);
 	}

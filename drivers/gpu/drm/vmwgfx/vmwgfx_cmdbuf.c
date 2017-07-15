@@ -25,8 +25,9 @@
  *
  **************************************************************************/
 
+#include <drm/ttm/ttm_bo_api.h>
+
 #include "vmwgfx_drv.h"
-#include "ttm/ttm_bo_api.h"
 
 /*
  * Size of inline command buffers. Try to make sure that a page size is a
@@ -673,16 +674,10 @@ static bool vmw_cmdbuf_try_alloc(struct vmw_cmdbuf_man *man,
  
 	memset(info->node, 0, sizeof(*info->node));
 	spin_lock_bh(&man->lock);
-	ret = drm_mm_insert_node_generic(&man->mm, info->node, info->page_size,
-					 0, 0,
-					 DRM_MM_SEARCH_DEFAULT,
-					 DRM_MM_CREATE_DEFAULT);
+	ret = drm_mm_insert_node(&man->mm, info->node, info->page_size);
 	if (ret) {
 		vmw_cmdbuf_man_process(man);
-		ret = drm_mm_insert_node_generic(&man->mm, info->node,
-						 info->page_size, 0, 0,
-						 DRM_MM_SEARCH_DEFAULT,
-						 DRM_MM_CREATE_DEFAULT);
+		ret = drm_mm_insert_node(&man->mm, info->node, info->page_size);
 	}
 
 	spin_unlock_bh(&man->lock);

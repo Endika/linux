@@ -173,7 +173,8 @@ int ip_build_and_send_pkt(struct sk_buff *skb, const struct sock *sk,
 	}
 
 	skb->priority = sk->sk_priority;
-	skb->mark = sk->sk_mark;
+	if (!skb->mark)
+		skb->mark = sk->sk_mark;
 
 	/* Send it out. */
 	return ip_local_out(net, skb->sk, skb);
@@ -222,7 +223,10 @@ static int ip_finish_output2(struct net *net, struct sock *sk, struct sk_buff *s
 	if (unlikely(!neigh))
 		neigh = __neigh_create(&arp_tbl, &nexthop, dev, false);
 	if (!IS_ERR(neigh)) {
-		int res = dst_neigh_output(dst, neigh, skb);
+		int res;
+
+		sock_confirm_neigh(skb, neigh);
+		res = neigh_output(neigh, skb);
 
 		rcu_read_unlock_bh();
 		return res;
@@ -886,6 +890,9 @@ static inline int ip_ufo_append_data(struct sock *sk,
 
 		skb->csum = 0;
 
+		if (flags & MSG_CONFIRM)
+			skb_set_dst_pending_confirm(skb, 1);
+
 		__skb_queue_tail(queue, skb);
 	} else if (skb_is_gso(skb)) {
 		goto append;
@@ -958,9 +965,10 @@ static int __ip_append_data(struct sock *sk,
 		csummode = CHECKSUM_PARTIAL;
 
 	cork->length += length;
-	if ((((length + fragheaderlen) > mtu) || (skb && skb_is_gso(skb))) &&
+	if ((((length + (skb ? skb->len : fragheaderlen)) > mtu) ||
+	     (skb && skb_is_gso(skb))) &&
 	    (sk->sk_protocol == IPPROTO_UDP) &&
-	    (rt->dst.dev->features & NETIF_F_UFO) && !rt->dst.header_len &&
+	    (rt->dst.dev->features & NETIF_F_UFO) && !dst_xfrm(&rt->dst) &&
 	    (sk->sk_type == SOCK_DGRAM) && !sk->sk_no_check_tx) {
 		err = ip_ufo_append_data(sk, queue, getfrag, from, length,
 					 hh_len, fragheaderlen, transhdrlen,
@@ -1030,7 +1038,7 @@ alloc_new_skb:
 						(flags & MSG_DONTWAIT), &err);
 			} else {
 				skb = NULL;
-				if (atomic_read(&sk->sk_wmem_alloc) <=
+				if (refcount_read(&sk->sk_wmem_alloc) <=
 				    2 * sk->sk_sndbuf)
 					skb = sock_wmalloc(sk,
 							   alloclen + hh_len + 15, 1,
@@ -1086,6 +1094,9 @@ alloc_new_skb:
 			exthdrlen = 0;
 			csummode = CHECKSUM_NONE;
 
+			if ((flags & MSG_CONFIRM) && !skb_prev)
+				skb_set_dst_pending_confirm(skb, 1);
+
 			/*
 			 * Put the packet on the pending queue.
 			 */
@@ -1135,7 +1146,7 @@ alloc_new_skb:
 			skb->len += copy;
 			skb->data_len += copy;
 			skb->truesize += copy;
-			atomic_add(copy, &sk->sk_wmem_alloc);
+			refcount_add(copy, &sk->sk_wmem_alloc);
 		}
 		offset += copy;
 		length -= copy;
@@ -1359,7 +1370,7 @@ ssize_t	ip_append_page(struct sock *sk, struct flowi4 *fl4, struct page *page,
 		skb->len += len;
 		skb->data_len += len;
 		skb->truesize += len;
-		atomic_add(len, &sk->sk_wmem_alloc);
+		refcount_add(len, &sk->sk_wmem_alloc);
 		offset += len;
 		size -= len;
 	}

@@ -24,6 +24,7 @@
 #include <linux/bpf.h>
 #include <asm/cacheflush.h>
 #include <asm/dis.h>
+#include <asm/set_memory.h>
 #include "bpf_jit.h"
 
 int bpf_jit_enable __read_mostly;
@@ -990,7 +991,7 @@ static noinline int bpf_jit_insn(struct bpf_jit *jit, struct bpf_prog *fp, int i
 		}
 		break;
 	}
-	case BPF_JMP | BPF_CALL | BPF_X:
+	case BPF_JMP | BPF_TAIL_CALL:
 		/*
 		 * Implicit input:
 		 *  B1: pointer to ctx
@@ -1263,14 +1264,6 @@ static int bpf_jit_prog(struct bpf_jit *jit, struct bpf_prog *fp)
 }
 
 /*
- * Classic BPF function stub. BPF programs will be converted into
- * eBPF and then bpf_int_jit_compile() will be called.
- */
-void bpf_jit_compile(struct bpf_prog *fp)
-{
-}
-
-/*
  * Compile eBPF program "fp"
  */
 struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *fp)
@@ -1331,14 +1324,12 @@ struct bpf_prog *bpf_int_jit_compile(struct bpf_prog *fp)
 	}
 	if (bpf_jit_enable > 1) {
 		bpf_jit_dump(fp->len, jit.size, pass, jit.prg_buf);
-		if (jit.prg_buf)
-			print_fn_code(jit.prg_buf, jit.size_prg);
+		print_fn_code(jit.prg_buf, jit.size_prg);
 	}
-	if (jit.prg_buf) {
-		set_memory_ro((unsigned long)header, header->pages);
-		fp->bpf_func = (void *) jit.prg_buf;
-		fp->jited = 1;
-	}
+	bpf_jit_binary_lock_ro(header);
+	fp->bpf_func = (void *) jit.prg_buf;
+	fp->jited = 1;
+	fp->jited_len = jit.size;
 free_addrs:
 	kfree(jit.addrs);
 out:
@@ -1346,22 +1337,4 @@ out:
 		bpf_jit_prog_release_other(fp, fp == orig_fp ?
 					   tmp : orig_fp);
 	return fp;
-}
-
-/*
- * Free eBPF program
- */
-void bpf_jit_free(struct bpf_prog *fp)
-{
-	unsigned long addr = (unsigned long)fp->bpf_func & PAGE_MASK;
-	struct bpf_binary_header *header = (void *)addr;
-
-	if (!fp->jited)
-		goto free_filter;
-
-	set_memory_rw(addr, header->pages);
-	bpf_jit_binary_free(header);
-
-free_filter:
-	bpf_prog_unlock_free(fp);
 }
